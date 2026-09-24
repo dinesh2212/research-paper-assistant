@@ -1,0 +1,14 @@
+.git
+.env
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
+data
+frontend
+research_paper_assistant_project_overview.pdf
+PROJECT_DECISIONS.txt
+PROJECT_PROGRESS.txt

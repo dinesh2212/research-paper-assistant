@@ -1,0 +1,43 @@
+{
+  "description": "Synthetic labeled passages for a reproducible retrieval smoke baseline; not a scientific-paper benchmark.",
+  "papers": [
+    {
+      "key": "batteries",
+      "title": "Battery temperature and charge measurement",
+      "pages": [
+        "Lithium-ion battery aging experiment. Cells maintained at 25 degrees Celsius retained 92 percent of their initial capacity after 500 charge cycles. Cells maintained at 45 degrees Celsius retained only 78 percent. Elevated temperature accelerated electrolyte decomposition and capacity loss.",
+        "Estimating battery state of charge. The controller integrated measured current over time using coulomb counting. It periodically corrected accumulated integration error using the open-circuit voltage after a rest interval. Neither temperature nor cell mass alone was used to estimate charge.",
+        "Battery separator safety. A polyethylene separator closed its pores when heated to 135 degrees Celsius. This thermal shutdown reduced ionic conduction and interrupted current, limiting further heat generation. The separator was designed to mitigate overheating rather than improve normal cycling capacity."
+      ]
+    },
+    {
+      "key": "irrigation",
+      "title": "Soil moisture and irrigation field trial",
+      "pages": [
+        "Soil moisture scheduling in a tomato field. Irrigation started when volumetric soil water content fell below 18 percent. Buried capacitance sensors measured moisture at a depth of 20 centimeters. A fixed daily timer was not used in the sensor-controlled treatment.",
+        "Water consumption results. The deficit irrigation treatment used 25 percent less water than the fully irrigated control. Tomato yield decreased by 3 percent. The trial therefore found substantial water savings with a small yield reduction under its field conditions.",
+        "Nitrate leaching assessment. Drainage lysimeters collected water below the root zone after irrigation. Laboratory colorimetry measured nitrate concentrations in those samples. Smaller irrigation pulses reduced deep drainage and nitrogen loss compared with infrequent large applications."
+      ]
+    },
+    {
+      "key": "exoplanets",
+      "title": "Exoplanet detection and atmospheric observations",
+      "pages": [
+        "Planetary transit observations. A planet passing in front of its host star blocked a fraction of starlight, causing periodic dips in the brightness time series. The transit depth constrained the ratio of planet radius to stellar radius. The interval between repeated dips measured the orbital period.",
+        "Radial velocity confirmation. Spectroscopic Doppler shifts revealed the host star moving toward and away from the observer as it orbited the system's center of mass. The stellar wobble constrained the planet's mass. This method complemented transit measurements of planetary radius.",
+        "Atmospheric transmission spectroscopy. During transit, some starlight passed through the planet's atmosphere. Enhanced absorption near the sodium doublet identified sodium in the upper atmosphere. Wavelength-dependent transit depth provided information about atmospheric composition."
+      ]
+    }
+  ],
+  "questions": [
+    {"question": "How did warmer conditions affect battery capacity after repeated charging?", "paper": "batteries", "page": 1},
+    {"question": "What method estimated remaining battery charge and corrected accumulated error?", "paper": "batteries", "page": 2},
+    {"question": "How did the battery separator interrupt current when it became too hot?", "paper": "batteries", "page": 3},
+    {"question": "What soil measurement triggered watering in the tomato experiment?", "paper": "irrigation", "page": 1},
+    {"question": "How much water was saved and what happened to tomato yield?", "paper": "irrigation", "page": 2},
+    {"question": "How did researchers sample and measure nitrogen escaping below plant roots?", "paper": "irrigation", "page": 3},
+    {"question": "Why did stellar brightness periodically decrease and what did that reveal about the planet?", "paper": "exoplanets", "page": 1},
+    {"question": "How did shifts in a star's spectrum help estimate a planet's mass?", "paper": "exoplanets", "page": 2},
+    {"question": "Which observation detected sodium in an exoplanet atmosphere?", "paper": "exoplanets", "page": 3}
+  ]
+}

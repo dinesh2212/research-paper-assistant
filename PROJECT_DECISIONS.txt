@@ -1,0 +1,298 @@
+RESEARCH PAPER ASSISTANT - PROJECT DECISIONS
+Last updated: 2026-09-09
+
+PURPOSE AND CONSTRAINTS
+
+- This is a personal project.
+- The application must be free to run.
+- Local models are preferred. Cloud APIs are acceptable in principle but are
+  not part of the planned implementation.
+- The application is single-user and runs locally.
+
+HARDWARE AND MODEL RUNTIME
+
+- CPU: AMD Ryzen 5 7600X (6 cores / 12 threads).
+- System memory: 30 GiB.
+- GPU: AMD Radeon RX 9060 XT with 16 GiB VRAM.
+- Ollama is the local model runtime and runs directly on the host so it can
+  access the GPU.
+- ROCm 7 support must be installed and verified before relying on GPU
+  acceleration.
+- Primary generation model: gemma4:12b.
+- Initial application context limit: 16K tokens.
+- Embedding model: qwen3-embedding:0.6b.
+- Fallback generation model: gemma4:e4b.
+
+MVP FEATURES
+
+- Upload and manage text-based research paper PDFs.
+- Extract, clean, chunk, embed, and index paper text.
+- Display ingestion progress and failures.
+- Query one or multiple explicitly selected papers.
+- Stream citation-grounded answers.
+- Display supporting source excerpts and paper page numbers.
+- Allow papers and their indexed data to be deleted.
+
+CONFIRMED SCOPE DECISIONS
+
+- Multi-paper querying is included in the MVP.
+- Persistent chat history is postponed.
+- Chat context exists only in the active browser session and may be sent with
+  each request; it is not stored by the backend.
+- OCR for scanned PDFs is postponed.
+- Figure and image interpretation is postponed.
+- The initial ingestion pipeline supports text-based PDFs only.
+- Tables are usable only when their text can be extracted normally.
+
+ANSWER AND CITATION BEHAVIOR
+
+- The model answers only from retrieved paper context.
+- If the retrieved evidence is insufficient, the answer must say so instead
+  of relying on the model's general knowledge.
+- User-facing citations use numbered markers such as [1].
+- Each citation maps to structured source data containing paper ID, paper
+  title, page number, chunk ID, and supporting excerpt.
+- Chunks do not cross page boundaries, preserving reliable page citations.
+
+IMPLEMENTATION DEFAULTS
+
+- Backend: Python and FastAPI.
+- LLM orchestration: focused LangChain components rather than a large opaque
+  chain.
+- Frontend: React, Vite, and TypeScript.
+- PDF extraction: PyMuPDF.
+- Vector database: Qdrant with persistent local storage.
+- Relational metadata: SQLite.
+- Original PDF storage: local filesystem.
+- Deployment: Docker Compose for the frontend, backend, and Qdrant.
+- Authentication: none for the initial localhost-only application.
+- Answer streaming: Server-Sent Events (SSE).
+- Ingestion: FastAPI background processing with ingestion state persisted in
+  SQLite; no Redis or Celery.
+
+FOUNDATION IMPLEMENTATION DECISIONS
+
+- Python dependencies and the virtual environment are managed with uv.
+- The supported Python range is 3.12 through 3.14.
+- Backend configuration is validated from environment variables with
+  Pydantic Settings.
+- Versioned backend routes use the /api/v1 prefix.
+- The backend exposes separate liveness and readiness checks.
+- Readiness covers SQLite, Qdrant, Ollama, and availability of the configured
+  generation and embedding models.
+- Readiness returns HTTP 503 when any required service or model is
+  unavailable.
+- The initial Qdrant deployment is pinned to version 1.18.2 rather than an
+  unpinned latest image.
+- The frontend uses React, Vite, and strict TypeScript.
+- During local development, Vite proxies /api requests to FastAPI at
+  127.0.0.1:8000.
+- The frontend does not load externally hosted fonts or visual assets. This
+  preserves the local-only privacy model and avoids unnecessary network
+  dependencies.
+- Backend quality gates are Ruff formatting and linting, strict MyPy checks,
+  and Pytest.
+- Frontend quality gates are Prettier, ESLint, TypeScript checking, Vitest,
+  and a production build.
+- Docker Compose will package the frontend, backend, and Qdrant. Ollama stays
+  on the host for direct AMD GPU access, and the containerized backend will
+  connect to the host Ollama service.
+
+INGESTION IMPLEMENTATION NOTES (2026-09-08)
+
+- One lifespan-managed async worker polls persisted SQLite ingestion jobs.
+  Run only one backend process per database/storage directory. Multiple
+  Uvicorn workers and backend replicas are not supported by the local locks.
+- Interrupted processing jobs are requeued at startup. Failed jobs require
+  an explicit POST /api/v1/papers/{id}/retry after resolving the cause.
+- Paper and IngestionJob status updates are committed together; existing
+  tables require no schema migration.
+- PyMuPDF extraction runs off the event loop, preserving physical 1-based
+  PDF page numbers. Empty and image-only pages are skipped in mixed PDFs;
+  documents without extractable text fail with an OCR explanation.
+- Unicode normalization preserves superscripts/subscripts and scientific
+  symbols; typographic ligatures and whitespace are normalized.
+- The initial 700/100 token targets are character-based estimates using
+  four characters per token for English prose, not exact Qwen token counts.
+  Chunks are bounded at 2,800 characters, with approximately 400 characters
+  of overlap; each chunk is a normalized substring of one page. Exact
+  tokenizer-based sizing can be added during retrieval evaluation.
+- Embeddings use the Ollama /api/embed endpoint in batches of 16, with
+  truncation disabled and count, dimension, and finite/nonzero validation.
+- Qdrant uses the paper_chunks_qwen3_0_6b_v1 collection, 1,024 dimensions,
+  cosine distance, and a paper_id keyword index. Use a new collection when
+  changing embedding models; collection/model migration is not automatic.
+- Deterministic chunk UUIDs and paper-filtered cleanup make retries and
+  startup recovery idempotent. A paper becomes ready only after all Qdrant
+  point writes have completed. Failed papers must be excluded from retrieval.
+- Deletion shares a per-paper lock with processing and waits for that work.
+  It persists a non-ready state before removing vectors, then deletes the
+  PDF and database records. Failed cleanup preserves the remaining records
+  so the operation can be retried.
+- The Nginx proxy delegates PDF upload size enforcement to the backend's
+  configurable limit, avoiding Nginx's default 1 MiB restriction.
+- The frontend upload controls remain part of the later frontend milestone;
+  ingestion is usable now via the API and interactive API documentation.
+
+RETRIEVAL DEFAULTS
+
+- Page-aware chunks of approximately 700 tokens.
+- Approximately 100 tokens of overlap between chunks on the same page.
+- Retrieve about 20 dense-search candidates.
+- Apply diversity filtering and send the best 6-8 chunks to the generation
+  model.
+- Start with dense semantic retrieval.
+- Hybrid keyword/vector retrieval can be added after the baseline is
+  evaluated.
+
+RETRIEVAL IMPLEMENTATION NOTES (2026-09-09)
+
+- The inspection endpoint is POST /api/v1/debug/retrieval. It is registered
+  in development/test, but absent in production unless the local operator
+  explicitly sets RETRIEVAL_DEBUG_ENABLED=true. It does not call Gemma.
+- Requests require a nonblank question (up to 2,000 characters) and 1-20
+  distinct selected paper UUIDs. Missing IDs return 404 and non-ready papers
+  return 409. Invalid input returns 422. There is no whole-library fallback.
+- Queries use Qwen's Instruct/Query format; indexed document text remains
+  unprefixed. The configured model must match the indexed embedding model.
+- Dense Qdrant queries request 20 candidates, filtered by selected paper_id
+  values and embedding_model. Raw candidate vectors are used only internally.
+- MMR selects up to eight passages (request limit 1-8), with relevance
+  weight 0.7. Exact whitespace-equivalent repeats within a paper are removed.
+  The best dense hit is retained. Sources are not forced to cover every paper.
+- Responses include candidate_count and source_id, paper_id, paper_title,
+  page_number, chunk_id, excerpt, and original cosine score for each source.
+  Source IDs are scoped to one response; chunk IDs remain stable. Sources
+  follow diversity-selection order, not necessarily descending cosine score.
+- SQLite supplies titles/readiness. Source payload validation checks ownership,
+  physical page bounds, deterministic chunk UUIDs, embedding model, and vector
+  validity. Ordered per-paper locks coordinate retrieval with deletion/retry.
+- Retrieval has a 30-second deadline and returns 503 on timeout or unavailable
+  dependencies/indexes. Empty search results return 200 with an empty list.
+- An optional score_threshold supports debugging; no default cutoff or
+  answerability claim is made from similarity scores alone. Insufficient-
+  evidence behavior must be evaluated during the generation milestone.
+- The initial synthetic baseline has three PDFs, nine labeled pages, and
+  nine questions. It achieved 9/9 correct top hits and page/excerpt mappings
+  against the real local services. This is not a representative real-paper
+  benchmark. Inputs/results are in evals/ and can be rerun with
+  uv run python scripts/evaluate_retrieval.py.
+
+WEB QUERY INTERFACE UPDATE (2026-09-09)
+
+- At the user's request, browser uploads and retrieval queries were moved
+  ahead of grounded answer generation in the implementation order.
+- The web app supports PDF upload, automatic ingestion-status updates,
+  explicit ready-paper selection, questions, and page-labeled source excerpts.
+- Browser queries use the existing locally enabled retrieval endpoint.
+  They return evidence passages; generated answers and SSE remain future work.
+- Paper deletion and failed-ingestion retries still use the API documentation.
+
+DATA OWNERSHIP
+
+- SQLite stores paper metadata and ingestion status.
+- Qdrant stores embeddings and searchable chunk payloads.
+- The local filesystem stores original PDFs.
+- Chat sessions and messages are not persisted.
+
+DEFERRED FEATURES
+
+- Persistent chat history.
+- OCR and scanned-PDF ingestion.
+- Figure, chart, and image analysis.
+- Automated paper comparison workflows.
+- Automatic literature review generation.
+- Hybrid retrieval and optional reranking.
+- Authentication, multi-user accounts, cloud deployment, AWS, and S3.
+
+TESTING EXPECTATIONS
+
+- Unit tests cover PDF extraction, chunking, and citation mapping.
+- Integration tests cover upload, ingestion, querying, and deletion APIs.
+- A small evaluation set measures retrieval relevance, groundedness, and
+  citation correctness.
+
+IMPLEMENTATION ORDER
+
+The project is implemented as testable vertical milestones. Retrieval must be
+validated before building LLM generation and the full chat interface.
+
+1. Verify local infrastructure
+
+- Confirm ROCm 7 detects the RX 9060 XT.
+- Run gemma4:12b and qwen3-embedding:0.6b through Ollama.
+- Confirm Docker and Qdrant operate correctly.
+- Record basic generation and embedding performance.
+
+2. Create the project foundation
+
+- Create backend, frontend, data, and deployment structure.
+- Configure FastAPI, React/Vite, SQLite, Qdrant, and environment variables.
+- Add health checks for the API, Qdrant, and Ollama.
+- Establish formatting, linting, and test commands.
+
+3. Build paper storage APIs
+
+- Define Paper and IngestionJob SQLite models.
+- Implement PDF upload, validation, listing, details, and deletion.
+- Store files using generated IDs instead of user-provided filenames.
+- Test duplicate files, invalid PDFs, size limits, and cleanup failures.
+
+4. Implement ingestion
+
+- Extract page-level text with PyMuPDF.
+- Detect empty or scanned PDFs and reject them with a clear error.
+- Normalize text without losing page boundaries.
+- Create approximately 700-token chunks with 100-token overlap.
+- Generate embeddings in batches and store them in Qdrant.
+- Persist pending, processing, ready, and failed ingestion states.
+
+5. Implement retrieval independently
+
+- Accept a question and explicitly selected paper IDs.
+- Embed the question and filter Qdrant by the selected paper IDs.
+- Retrieve about 20 candidates and select 6-8 diverse chunks.
+- Provide a development-only retrieval endpoint with scores and excerpts.
+- Validate retrieval quality before connecting Gemma.
+
+6. Add grounded answer generation
+
+- Construct prompts from retrieved chunks with stable source identifiers.
+- Require Gemma to answer only from supplied evidence.
+- Parse and validate citation markers on the backend.
+- Return an insufficient-evidence response when retrieval is weak.
+- Stream answer tokens and structured citations using SSE.
+
+7. Build the frontend
+
+- Build the paper library with upload, status, selection, and deletion.
+- Build the multi-paper chat workspace.
+- Render streamed answers.
+- Show paper title, page number, and excerpt for each citation.
+- Keep conversation state in browser memory only.
+
+8. Evaluate and harden
+
+- Create a small evaluation set with known questions and answers.
+- Measure retrieval relevance, citation correctness, and groundedness.
+- Tune chunk size, overlap, candidate count, and score thresholds.
+- Test model outages, Qdrant failures, corrupt PDFs, interrupted ingestion,
+  and deletion cleanup.
+
+9. Package the application
+
+- Finalize Docker Compose and persistent volumes.
+- Document Ollama, ROCm, and model installation.
+- Add one-command development startup and database initialization.
+- Verify the application from a clean checkout.
+
+MILESTONE EXIT CRITERIA
+
+- Foundation milestone: health checks work and the empty paper library API is
+  usable.
+- Ingestion milestone: an uploaded PDF is fully indexed in Qdrant and its
+  status is visible.
+- Retrieval milestone: relevant, paper-filtered source chunks are returned
+  without involving the generation model.
+- MVP milestone: a question across selected papers produces a grounded,
+  streamed answer with verified page citations.

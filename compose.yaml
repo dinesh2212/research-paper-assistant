@@ -1,0 +1,79 @@
+name: research-paper-assistant
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__HOST: 127.0.0.1
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_started
+    environment:
+      APP_ENV: production
+      APP_HOST: 127.0.0.1
+      APP_PORT: 8000
+      API_PREFIX: /api/v1
+      DATABASE_URL: sqlite+aiosqlite:///./data/research_paper_assistant.db
+      PAPER_STORAGE_PATH: ./data/papers
+      MAX_PDF_SIZE_BYTES: ${MAX_PDF_SIZE_BYTES:-52428800}
+      QDRANT_URL: http://127.0.0.1:6333
+      OLLAMA_URL: http://127.0.0.1:11434
+      OLLAMA_GENERATION_MODEL: ${OLLAMA_GENERATION_MODEL:-gemma4:12b}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-qwen3-embedding:0.6b}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-16}
+      INDEXING_TIMEOUT_SECONDS: ${INDEXING_TIMEOUT_SECONDS:-120}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-paper_chunks_qwen3_0_6b_v1}
+      CHUNK_TOKENS: ${CHUNK_TOKENS:-700}
+      CHUNK_OVERLAP_TOKENS: ${CHUNK_OVERLAP_TOKENS:-100}
+      INGESTION_POLL_SECONDS: ${INGESTION_POLL_SECONDS:-1}
+      RETRIEVAL_DEBUG_ENABLED: ${RETRIEVAL_DEBUG_ENABLED:-false}
+      HEALTH_TIMEOUT_SECONDS: ${HEALTH_TIMEOUT_SECONDS:-3}
+      CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:5173/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  qdrant_storage:
+    name: research-paper-qdrant-storage
