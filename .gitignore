@@ -27,3 +27,8 @@ frontend/dist/
 .idea/
 .vscode/
 .DS_Store
+
+#Misc
+.gitignore
+PROJECT_DECISIONS.txt
+PROJECT_PROGRESS.txt 
