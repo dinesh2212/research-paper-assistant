@@ -52,7 +52,7 @@ describe("App", () => {
     expect(
       screen.getByRole("checkbox", { name: "Processing study" }),
     ).toBeDisabled();
-    const submit = screen.getByRole("button", { name: "Search papers" });
+    const submit = screen.getByRole("button", { name: "Get answer" });
     fireEvent.change(screen.getByLabelText("Your question"), {
       target: { value: "  What changed?  " },
     });
@@ -60,10 +60,10 @@ describe("App", () => {
     fireEvent.click(battery);
     fireEvent.click(submit);
     expect(
-      await screen.findByRole("button", { name: "Searching…" }),
+      await screen.findByRole("button", { name: "Answering…" }),
     ).toBeDisabled();
     expect(fetchMock).toHaveBeenLastCalledWith(
-      "/api/v1/debug/retrieval",
+      "/api/v1/answers",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
@@ -78,6 +78,8 @@ describe("App", () => {
         question: "What changed?",
         paper_ids: ["paper-a"],
         candidate_count: 1,
+        answer: "Capacity fell by 10%. [1]",
+        insufficient_evidence: false,
         sources: [
           {
             source_id: 1,
@@ -94,9 +96,10 @@ describe("App", () => {
     expect(
       await screen.findByText("Capacity decreased by ten percent."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Capacity fell by 10%. [1]")).toBeInTheDocument();
     expect(screen.getByText("Page 3")).toBeInTheDocument();
     expect(screen.getByText("[1] Battery study")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Search papers" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Get answer" })).toBeEnabled();
   });
 
   it("shows retrieval errors, permits retry, and explains empty results", async () => {
@@ -114,6 +117,9 @@ describe("App", () => {
               question: "Evidence?",
               paper_ids: ["paper-a", "paper-b"],
               candidate_count: 0,
+              answer:
+                "The selected papers do not provide enough evidence to answer this question.",
+              insufficient_evidence: true,
               sources: [],
             }),
       );
@@ -126,17 +132,20 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Your question"), {
       target: { value: "Evidence?" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Search papers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Get answer" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Retrieval timed out; try again.",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Search papers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Get answer" }));
     expect(
       await screen.findByText(/No matching passages found/),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/do not provide enough evidence/),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(globalThis.fetch).toHaveBeenLastCalledWith(
-      "/api/v1/debug/retrieval",
+      "/api/v1/answers",
       expect.objectContaining({
         body: JSON.stringify({
           question: "Evidence?",

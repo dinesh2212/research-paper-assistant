@@ -3,10 +3,10 @@ import { useEffect, useState } from "react";
 import {
   getPaper,
   getPapers,
-  searchPapers,
+  answerQuestion,
   uploadPaper,
   type PaperSummary,
-  type RetrievalResponse,
+  type AnswerResponse,
 } from "./api";
 
 interface Props {
@@ -33,7 +33,7 @@ export default function PaperWorkspace({
   const [libraryError, setLibraryError] = useState("");
   const [searchError, setSearchError] = useState("");
   const [notice, setNotice] = useState("");
-  const [result, setResult] = useState<RetrievalResponse | null>(null);
+  const [result, setResult] = useState<AnswerResponse | null>(null);
   const [failures, setFailures] = useState<Record<string, string>>({});
 
   // Poll only while ingestion is active; cleanup prevents stale responses
@@ -107,7 +107,7 @@ export default function PaperWorkspace({
     setSearchError("");
     setResult(null);
     try {
-      setResult(await searchPapers(question.trim(), selected));
+      setResult(await answerQuestion(question.trim(), selected));
     } catch (error) {
       setSearchError(message(error));
     } finally {
@@ -207,11 +207,12 @@ export default function PaperWorkspace({
         <div className="panel-heading">
           <div>
             <span className="section-number">02</span>
-            <h2>Search your papers</h2>
+            <h2>Ask your papers</h2>
           </div>
         </div>
         <p className="query-help" id="query-help">
-          Ask a question to find supporting passages and page references.
+          Ask a question for an answer with supporting passages and page
+          references.
         </p>
         <form
           onSubmit={(event) => {
@@ -242,28 +243,37 @@ export default function PaperWorkspace({
                 selected.length === 0
               }
             >
-              {searching ? "Searching…" : "Search papers"}
+              {searching ? "Answering…" : "Get answer"}
             </button>
             <span id="selection-help">
               {selected.length === 0
                 ? "Select a ready paper above to search."
-                : `Searching ${selected.length} selected ${selected.length === 1 ? "paper" : "papers"}.`}
+                : `Using ${selected.length} selected ${selected.length === 1 ? "paper" : "papers"}.`}
             </span>
           </div>
         </form>
-        {searching && <p role="status">Finding relevant passages…</p>}
+        {searching && (
+          <p role="status">
+            Reading relevant passages and preparing an answer…
+          </p>
+        )}
         {searchError && (
           <p role="alert" className="inline-error">
             {searchError}
           </p>
         )}
         {result && (
-          <section className="search-results" aria-label="Search results">
-            <h3>Results for “{result.question}”</h3>
+          <section className="search-results" aria-label="Answer and sources">
+            <h3>Answer to “{result.question}”</h3>
+            <p className="generated-answer">{result.answer}</p>
+            {!result.insufficient_evidence && (
+              <p>Check the cited excerpts below to verify the answer.</p>
+            )}
+            <h3>Retrieved sources</h3>
             <p role="status">
               {result.sources.length === 0
                 ? "No matching passages found. Try another question or select different papers."
-                : `${result.sources.length} supporting ${result.sources.length === 1 ? "passage" : "passages"} found.`}
+                : `${result.sources.length} retrieved ${result.sources.length === 1 ? "passage" : "passages"}.`}
             </p>
             <ol className="source-list">
               {result.sources.map((source) => (

@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://127.0.0.1:6333"
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_generation_model: str = "gemma4:12b"
+    generation_timeout_seconds: float = Field(default=120, gt=0, le=600)
+    generation_context_tokens: int = Field(default=16384, ge=4096)
     ollama_embedding_model: str = "qwen3-embedding:0.6b"
     embedding_dimensions: int = Field(default=1024, ge=1)
     embedding_batch_size: int = Field(default=16, ge=1, le=128)

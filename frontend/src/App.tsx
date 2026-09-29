@@ -99,19 +99,19 @@ function App() {
       <section className="hero" id="top">
         <div className="eyebrow">Citation-grounded research</div>
         <h1>
-          Search your papers.
+          Ask your papers.
           <br />
           Find the evidence.
         </h1>
         <p>
-          Upload research papers, ask a question, and explore relevant passages
-          with references to the original pages.
+          Upload research papers and get answers with source excerpts and
+          references to the original pages.
         </p>
         <div className="hero-actions">
           <a className="primary-button" href="#library">
             Upload a paper
           </a>
-          <a href="#query">Search your papers</a>
+          <a href="#query">Ask your papers</a>
         </div>
       </section>
 

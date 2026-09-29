@@ -13,6 +13,7 @@ from research_paper_assistant.api.router import api_router
 from research_paper_assistant.api.routes.retrieval import router as retrieval_router
 from research_paper_assistant.core.config import Settings, get_settings
 from research_paper_assistant.db import Database
+from research_paper_assistant.services.answers import AnswerService, build_answer_chain
 from research_paper_assistant.services.health import HealthChecker, HealthService
 from research_paper_assistant.services.indexing import OllamaEmbedder, QdrantStore
 from research_paper_assistant.services.ingestion import IngestionWorker
@@ -26,6 +27,7 @@ def create_app(
     paper_service: PaperService | None = None,
     indexing_transport: httpx.AsyncBaseTransport | None = None,
     retrieval_service: RetrievalService | None = None,
+    answer_service: AnswerService | None = None,
 ) -> FastAPI:
     """Create a configured FastAPI application."""
 
@@ -80,6 +82,11 @@ def create_app(
                 ingestion_worker.embedder,
                 vectors,
             )
+            application.state.answer_service = answer_service or AnswerService(
+                application.state.retrieval_service,
+                build_answer_chain(app_settings),
+                app_settings.generation_timeout_seconds,
+            )
         else:
             application.state.paper_service = paper_service
 
@@ -121,6 +128,8 @@ def create_app(
         application.state.paper_service = paper_service
     if retrieval_service is not None:
         application.state.retrieval_service = retrieval_service
+    if answer_service is not None:
+        application.state.answer_service = answer_service
     application.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.cors_origins,

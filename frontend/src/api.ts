@@ -37,6 +37,11 @@ export interface RetrievalResponse {
   }[];
 }
 
+export interface AnswerResponse extends RetrievalResponse {
+  answer: string;
+  insufficient_evidence: boolean;
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -77,11 +82,11 @@ export function getPaper(id: string): Promise<PaperDetail> {
   return requestJson<PaperDetail>(`/api/v1/papers/${encodeURIComponent(id)}`);
 }
 
-export function searchPapers(
+export function answerQuestion(
   question: string,
   paperIds: string[],
-): Promise<RetrievalResponse> {
-  return requestJson<RetrievalResponse>("/api/v1/debug/retrieval", {
+): Promise<AnswerResponse> {
+  return requestJson<AnswerResponse>("/api/v1/answers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, paper_ids: paperIds, limit: 8 }),

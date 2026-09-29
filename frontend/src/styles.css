@@ -521,6 +521,11 @@ textarea:focus-visible {
   font-size: 0.7rem;
 }
 
+.generated-answer {
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
 footer {
   display: flex;
   justify-content: space-between;

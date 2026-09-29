@@ -1,8 +1,8 @@
 # Research Paper Assistant
 
 A local, single-user research assistant for text-based scientific PDFs. The
-application will use retrieval-augmented generation to answer questions only
-from selected papers and provide verified page-level citations.
+application uses retrieval-augmented generation to answer questions from selected
+papers and display source excerpts with physical PDF page references.
 
 The authoritative scope and implementation decisions are recorded in
 `PROJECT_DECISIONS.txt`. Completed work is tracked in `PROJECT_PROGRESS.txt`.
@@ -25,6 +25,7 @@ The backend provides:
 - Qdrant indexing with paper/page citation payloads and scoped vector deletion
 - persisted ingestion states, interrupted-job recovery, and failed-job retries
 - a development retrieval endpoint with selected-paper filtering and diverse source excerpts
+- LangChain answer generation through local Ollama with validated source references
 
 The frontend provides:
 
@@ -34,6 +35,7 @@ The frontend provides:
 - empty-library and backend-offline states
 - PDF upload with automatic ingestion-status updates and failure explanations
 - explicit selection of up to 20 ready papers and a question form
+- generated answers with numbered citations and insufficient-evidence handling
 - retrieved source excerpts with paper titles and physical PDF page numbers
 - a development proxy to the FastAPI backend
 - formatting, linting, tests, type checking, and production builds
@@ -104,18 +106,21 @@ to host localhost for privacy and direct GPU access.
 
 Open `http://127.0.0.1:5173` and use **Upload a PDF** in the paper library.
 Processing status updates automatically. Once a paper is `ready`, select its
-checkbox, enter a question under **Search your papers**, and click **Search
-papers**. Select multiple papers to search them together. Results show matching
+checkbox, enter a question under **Ask your papers**, and click **Get answer**.
+Select multiple papers to query them together. Results show an answer, retrieved
 passages, paper titles, and physical PDF page numbers.
 
-The current interface retrieves evidence; generated answers and streaming chat
-remain the next milestone. Failed uploads and searches show errors in the page.
-For failed ingestion, use **Why did processing fail?** to see the explanation.
-Deletion and ingestion retries remain available through the API documentation.
+Answers use LangChain's `ChatOllama` integration and the configured local generation
+model. Each generated statement references retrieved source IDs; the backend
+validates those IDs and appends citation markers such as `[1]`. Empty retrieval
+or a model abstention produces an explicit insufficient-evidence response.
+Malformed answers and unknown citation IDs return an error instead of being displayed.
 
-Browser search uses the existing retrieval endpoint. For Compose, set
-`RETRIEVAL_DEBUG_ENABLED=true` in `.env` (already enabled in this local workspace)
-before startup. This route remains disabled by default for production deployments.
+Reference validation confirms that citations point to supplied excerpts. It does
+not establish that the model's claims are factually supported; review the excerpts.
+Deletion and ingestion retries are available through the API documentation.
+The answer endpoint works in production without enabling the debug retrieval route.
+Streaming chat and conversation history are not implemented.
 
 ## Manual development setup
 
@@ -155,6 +160,7 @@ POST /api/v1/papers           Upload one PDF as multipart field `file`
 GET /api/v1/papers/{id}       Paper metadata and ingestion state
 DELETE /api/v1/papers/{id}    Delete paper vectors, stored PDF, and metadata
 POST /api/v1/papers/{id}/retry Requeue a failed ingestion attempt
+POST /api/v1/answers          Generate an answer with source references
 POST /api/v1/debug/retrieval  Inspect retrieval (development or explicit local opt-in)
 ```
 
@@ -237,8 +243,7 @@ Redis, or separate task service are required.
 
 The adapters follow the [Ollama embedding API](https://docs.ollama.com/api/embed)
 and [Qdrant point API](https://api.qdrant.tech/api-reference/points/upsert-points).
-Retrieval is available through the debug API below. Answer generation is the
-next milestone.
+Retrieval is available through the debug API below and feeds the answer endpoint.
 
 For a repeatable live test after starting Compose, run:
 
@@ -300,8 +305,10 @@ This retains the existing one-backend-process constraint.
 
 An optional `score_threshold` from -1 to 1 can be supplied for experiments.
 There is no default cutoff: a nearest passage is not necessarily sufficient
-evidence. Empty results return HTTP 200 with `sources: []`; answerability and
-insufficient-evidence behavior remain work for the generation milestone.
+evidence. Empty results return HTTP 200 with `sources: []`; the answer service
+separately asks the generation model to abstain when the
+retrieved excerpts cannot support an answer. No calibrated answerability threshold
+has been established.
 
 Run the labeled synthetic baseline against the local stack:
 
@@ -335,3 +342,30 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+## Answer generation
+
+`POST /api/v1/answers` accepts the same request as the retrieval endpoint and
+returns its fields plus `answer` and `insufficient_evidence`. The endpoint is
+always registered, including in production. It calls the existing retrieval
+service, preserving selected-paper filtering, readiness checks, and source
+validation. Retrieval locks are released before generation; returned excerpts
+are a snapshot and do not depend on papers remaining in the library afterward.
+
+The LangChain prompt asks the model to use only supplied evidence and treat
+paper content as untrusted data. Structured output separates statement text
+from source IDs. The server rejects missing, duplicate, or unknown references,
+and adds citation markers itself. Prompts are bounded to 24,000 excerpt
+characters; when necessary, the response shows the same shortened excerpts
+passed to the model. This is a character budget, not an exact tokenizer limit.
+
+`OLLAMA_GENERATION_MODEL` selects the local model. `GENERATION_CONTEXT_TOKENS`
+defaults to 16,384 and `GENERATION_TIMEOUT_SECONDS` defaults to 120 (maximum 600).
+Generation is serialized within the backend process; waiting for the generation
+slot counts toward that deadline. Retrieval retains its separate 30-second
+deadline. Dependency failures, invalid model output, and deadlines return 503.
+Nginx allows time for both operations. Output is returned once complete.
+
+No cloud model or tracing service is configured. The implementation uses
+`langchain-core` and `langchain-ollama`; the existing PDF, embedding, and Qdrant
+adapters remain responsible for ingestion and retrieval.
